@@ -47,28 +47,26 @@ jobs:
           if-no-files-found: error
 
   deploy:
-    name: Deploy to AWS
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: validate
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: read
-      id-token: write
+  name: Deploy to AWS
+  needs: validate
+  runs-on: ubuntu-latest
 
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v5
-        with:
-          name: ui-dist
-          path: dist
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
-      - name: Configure temporary AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOYMENT_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: GitHubActions-Amusema-UI
+  environment:
+    name: production
+
+  permissions:
+    contents: read
+    id-token: write
+
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v5
+      with:
+        role-to-assume: ${{ vars.AWS_DEPLOYMENT_ROLE_ARN }}
+        aws-region: ${{ vars.AWS_REGION }}
+        audience: sts.amazonaws.com
 
       - name: Upload hashed assets
         run: |
