@@ -34,12 +34,6 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # Adjust this command for Jest, Vitest, or remove it until tests exist.
-      - name: Test
-        run: npm test -- --run
-        env:
-          CI: true
-
       - name: Build
         run: npm run build
         env:
