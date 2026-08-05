@@ -1,14 +1,15 @@
-name: Deploy Amusema Production UI
+name: Deploy Amusema UI
 
 on:
   push:
     branches:
       - main
+      - develop
 
   workflow_dispatch:
 
 concurrency:
-  group: amusema-production-ui
+  group: amusema-${{ github.ref_name }}-ui
   cancel-in-progress: true
 
 permissions:
@@ -18,18 +19,28 @@ permissions:
 env:
   NODE_VERSION: "20"
   BUILD_DIRECTORY: "dist"
+  DEPLOYMENT_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'development' }}
 
 jobs:
   build-and-deploy:
-    name: Build and deploy production UI
+    name: Build and deploy ${{ github.ref_name == 'main' && 'production' || 'development' }} UI
     runs-on: ubuntu-latest
 
+    # Prevent a manual run from deploying an unsupported branch.
+    if: github.ref_name == 'main' || github.ref_name == 'develop'
+
     environment:
-      name: production
+      name: ${{ github.ref_name == 'main' && 'production' || 'development' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+
+      - name: Display deployment configuration
+        shell: bash
+        run: |
+          echo "Branch: ${GITHUB_REF_NAME}"
+          echo "Environment: ${DEPLOYMENT_ENVIRONMENT}"
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -41,12 +52,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build production application
+      - name: Build application
         run: npm run build
         env:
           CI: false
           NODE_OPTIONS: "--max-old-space-size=4096"
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_ENVIRONMENT: ${{ env.DEPLOYMENT_ENVIRONMENT }}
 
       - name: Verify build output
         shell: bash
@@ -66,34 +78,44 @@ jobs:
           echo "Build output verified."
           ls -la "${BUILD_DIRECTORY}"
 
+      - name: Validate deployment variables
+        shell: bash
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_DEPLOYMENT_ROLE_ARN: ${{ vars.AWS_DEPLOYMENT_ROLE_ARN }}
+          AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
+          AWS_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: |
+          set -euo pipefail
+
+          required_variables=(
+            "AWS_REGION"
+            "AWS_DEPLOYMENT_ROLE_ARN"
+            "AWS_S3_BUCKET"
+            "AWS_CLOUDFRONT_DISTRIBUTION_ID"
+            "VITE_API_URL"
+          )
+
+          for variable_name in "${required_variables[@]}"; do
+            if [ -z "${!variable_name:-}" ]; then
+              echo "::error::${variable_name} is not configured for the ${DEPLOYMENT_ENVIRONMENT} environment."
+              exit 1
+            fi
+          done
+
+          echo "Deployment variables validated for ${DEPLOYMENT_ENVIRONMENT}."
+
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_DEPLOYMENT_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: github-actions-amusema-prod-ui
+          role-session-name: github-actions-amusema-${{ env.DEPLOYMENT_ENVIRONMENT }}-ui
           mask-aws-account-id: true
 
       - name: Verify AWS identity
         run: aws sts get-caller-identity
-
-      - name: Validate deployment variables
-        shell: bash
-        env:
-          AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
-          AWS_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${AWS_S3_BUCKET}" ]; then
-            echo "::error::AWS_S3_BUCKET is not configured."
-            exit 1
-          fi
-
-          if [ -z "${AWS_CLOUDFRONT_DISTRIBUTION_ID}" ]; then
-            echo "::error::AWS_CLOUDFRONT_DISTRIBUTION_ID is not configured."
-            exit 1
-          fi
 
       - name: Upload versioned assets
         shell: bash
@@ -141,14 +163,16 @@ jobs:
           echo "CloudFront invalidation completed."
 
       - name: Deployment summary
+        shell: bash
         run: |
           {
-            echo "## Production deployment completed"
+            echo "## ${DEPLOYMENT_ENVIRONMENT^} deployment completed"
             echo ""
+            echo "- Environment: \`${DEPLOYMENT_ENVIRONMENT}\`"
+            echo "- Branch: \`${{ github.ref_name }}\`"
             echo "- AWS region: \`${{ vars.AWS_REGION }}\`"
             echo "- S3 bucket: \`${{ vars.AWS_S3_BUCKET }}\`"
             echo "- CloudFront distribution: \`${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID }}\`"
+            echo "- API URL: \`${{ vars.VITE_API_URL }}\`"
             echo "- Commit: \`${{ github.sha }}\`"
-            echo "- Branch: \`${{ github.ref_name }}\`"
           } >> "${GITHUB_STEP_SUMMARY}"
-
