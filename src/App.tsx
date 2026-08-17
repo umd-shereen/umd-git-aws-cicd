@@ -18,7 +18,7 @@ function App() {
         <div>
           <h1>Dev and prod work !!</h1>
           <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+           testing pull requests
           </p>
         </div>
         <button
