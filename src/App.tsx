@@ -18,7 +18,7 @@ function App() {
         <div>
           <h1>Dev and prod work !!</h1>
           <p>
-           testing pull requests accepting org
+           testing pull requests accepting organizations
           </p>
         </div>
         <button
